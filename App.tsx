@@ -1,7 +1,9 @@
 
-// Build: 3.0.1
+// Build: 3.0.3
 // - Logic: Enhanced JSON extraction (Markdown support).
 // - UX: Auto-detection of content type (JSON/M3U) on paste in manual import.
+// - Logic: Added strict duplicate check when adding single stations.
+// - UI: Fixed corner bleeding artifacts on station covers using WebkitMaskImage.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
@@ -19,7 +21,7 @@ import { Logo } from './components/UI/Logo.tsx';
 const ReorderGroup = Reorder.Group as any;
 const ReorderItem = Reorder.Item as any;
 
-const APP_VERSION = "3.0.1";
+const APP_VERSION = "3.0.3";
 
 const isVideoUrl = (url: string | undefined): boolean => {
   if (!url) return false;
@@ -676,6 +678,16 @@ export const App: React.FC = () => {
     const tagsStr = (formData.get('tags') as string).trim(); 
     const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
     if (!name || !url) return;
+
+    if (!editingStation) {
+      const isDuplicate = stations.some(s => s.streamUrl === url);
+      if (isDuplicate) {
+        setSnackbar('Такая станция уже существует');
+        hapticNotification('error');
+        return;
+      }
+    }
+
     if (editingStation) { 
       setStations(prev => prev.map(s => s.id === editingStation.id ? { ...s, name, streamUrl: url, coverUrl, homepageUrl, tags } : s)); 
       setEditingStation(null); setSnackbar('Обновлено'); 
@@ -763,8 +775,15 @@ export const App: React.FC = () => {
                   <div className="relative w-full aspect-square group" onClick={() => handleTogglePlay()}>
                     <motion.div animate={{ scale: activeStationId === station.id ? [1, 0.965, 1] : 1 }} transition={{ duration: 0.45, type: "spring", stiffness: 280, damping: 18 }} className="relative z-10 w-full h-full">
                       {/* Thick Glass Card Style */}
-                      <motion.div className="w-full h-full rounded-[2.5rem] overflow-hidden bg-white/30 dark:bg-white/5 backdrop-blur-xl border border-white/40 dark:border-white/10 transition-colors duration-700 relative shadow-[0_8px_32px_0_rgba(31,38,135,0.37)]" style={{ borderColor: activeStationId === station.id ? `${nativeAccentColor}88` : 'rgba(255,255,255,0.4)' }}>
-                        <StationCover station={station} className="w-full h-full opacity-90" isPlaying={playingStationId === station.id && isActuallyPlaying} />
+                      <motion.div 
+                        className="w-full h-full rounded-[2.5rem] overflow-hidden bg-white/30 dark:bg-white/5 backdrop-blur-xl border border-white/40 dark:border-white/10 transition-colors duration-700 relative shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] isolate" 
+                        style={{ 
+                          borderColor: activeStationId === station.id ? `${nativeAccentColor}88` : 'rgba(255,255,255,0.4)',
+                          WebkitMaskImage: '-webkit-radial-gradient(white, black)',
+                          maskImage: 'radial-gradient(white, black)'
+                        }}
+                      >
+                        <StationCover station={station} className="w-full h-full opacity-90 rounded-[inherit]" isPlaying={playingStationId === station.id && isActuallyPlaying} />
                         <AnimatePresence mode="popLayout">
                           {activeStationId === station.id && (
                             <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[2.5rem] z-40">
