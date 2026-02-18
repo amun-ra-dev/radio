@@ -1,9 +1,7 @@
 
-// Build: 3.0.0 (Liquid Glass)
-// - UI: Redesigned to Liquid Glass aesthetic.
-// - UI: Added animated background blobs.
-// - UI: Heavy usage of backdrop-blur and semi-transparent borders.
-// - Logic: Preserved all functionality from 2.9.42 (Import fallback, HLS fix, Play/Pause logic).
+// Build: 3.0.1
+// - Logic: Enhanced JSON extraction (Markdown support).
+// - UX: Auto-detection of content type (JSON/M3U) on paste in manual import.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
@@ -21,7 +19,7 @@ import { Logo } from './components/UI/Logo.tsx';
 const ReorderGroup = Reorder.Group as any;
 const ReorderItem = Reorder.Item as any;
 
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.0.1";
 
 const isVideoUrl = (url: string | undefined): boolean => {
   if (!url) return false;
@@ -58,28 +56,39 @@ const parseM3uText = (text: string): Partial<Station>[] => {
 };
 
 const extractJsonFromText = (text: string): any => {
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    const firstBrace = text.indexOf('{');
-    const firstBracket = text.indexOf('[');
-    let startIdx = -1;
-    let endChar = '';
-    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
-      startIdx = firstBrace;
-      endChar = '}';
-    } else if (firstBracket !== -1) {
-      startIdx = firstBracket;
-      endChar = ']';
-    }
-    if (startIdx !== -1) {
-      const lastIdx = text.lastIndexOf(endChar);
-      if (lastIdx > startIdx) {
-        try { return JSON.parse(text.substring(startIdx, lastIdx + 1)); } catch { return null; }
-      }
-    }
-    return null;
+  if (!text) return null;
+
+  // 1. Try exact parse
+  try { return JSON.parse(text); } catch {}
+
+  // 2. Try extracting from Markdown code blocks (```json ... ```)
+  const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/i);
+  if (markdownMatch && markdownMatch[1]) {
+    try { return JSON.parse(markdownMatch[1]); } catch {}
   }
+
+  // 3. Heuristic search for JSON object or array
+  const firstBrace = text.indexOf('{');
+  const firstBracket = text.indexOf('[');
+  
+  let startIdx = -1;
+  let endChar = '';
+  
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    startIdx = firstBrace;
+    endChar = '}';
+  } else if (firstBracket !== -1) {
+    startIdx = firstBracket;
+    endChar = ']';
+  }
+
+  if (startIdx !== -1) {
+    const lastIdx = text.lastIndexOf(endChar);
+    if (lastIdx > startIdx) {
+      try { return JSON.parse(text.substring(startIdx, lastIdx + 1)); } catch { return null; }
+    }
+  }
+  return null;
 };
 
 const MiniEqualizer: React.FC = () => (
@@ -548,6 +557,26 @@ export const App: React.FC = () => {
     } else { setSnackbar('Не найдено корректных станций'); hapticNotification('warning'); }
   };
 
+  const handleManualPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
+    
+    // Check JSON
+    const json = extractJsonFromText(text);
+    if (json) {
+       setSnackbar('Распознан JSON');
+       hapticNotification('success');
+       return;
+    }
+    
+    // Check M3U
+    if (text.includes('#EXTM3U') || text.includes('#EXTINF')) {
+       setSnackbar('Распознан M3U');
+       hapticNotification('success');
+       return;
+    }
+  };
+
   const handleManualImport = () => {
     if (!manualImportText.trim()) return;
     const data = extractJsonFromText(manualImportText);
@@ -920,6 +949,7 @@ export const App: React.FC = () => {
                     <textarea
                       value={manualImportText}
                       onChange={(e) => setManualImportText(e.target.value)}
+                      onPaste={handleManualPaste}
                       onFocus={handleInputFocus}
                       placeholder="Вставьте JSON или M3U текст здесь..."
                       className="w-full h-32 bg-black/5 dark:bg-white/5 rounded-2xl p-4 font-bold outline-none border border-transparent focus:border-blue-500/50 transition-all text-xs resize-none backdrop-blur-sm"
