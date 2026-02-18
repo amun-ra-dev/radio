@@ -1,0 +1,8 @@
+{
+  "name": "2026-02-18 Copy of Radio Player Mini App",
+  "description": "Telegram Mini App для прослушивания интернет-радио в стиле Flat Material с нативным управлением, поддержкой HLS и эффектом параллакса",
+  "version": "2.2.1",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
