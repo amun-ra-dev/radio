@@ -131,6 +131,10 @@ export const useTelegram = () => {
     tg?.HapticFeedback?.notificationOccurred?.(type);
   };
 
+  const hapticSelectionChanged = () => {
+    tg?.HapticFeedback?.selectionChanged?.();
+  };
+
   const setBackButton = (isVisible: boolean, onClick: () => void) => {
     if (!tg) return;
     if (isVisible) {
@@ -146,6 +150,7 @@ export const useTelegram = () => {
     isExpanded,
     hapticImpact,
     hapticNotification,
+    hapticSelectionChanged,
     setBackButton,
     isDark: tg?.colorScheme === 'dark',
     themeParams,

@@ -1,5 +1,5 @@
 
-// Build: 3.0.8
+// Build: 3.0.9
 // - Logic: Enhanced JSON extraction (Markdown support).
 // - UX: Auto-detection of content type (JSON/M3U) on paste in manual import.
 // - Logic: Added strict duplicate check when adding single stations.
@@ -8,6 +8,7 @@
 // - Perf: Merged Controls and Playlist into a single persistent sheet to eliminate animation lag.
 // - UX: Enhanced empty favorites state with clear CTA and visuals.
 // - Animation: Controls now slide down and fade out when playlist expands.
+// - Haptics: Optimized tactile feedback using selectionChanged and refined impact styles.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls, PanInfo } from 'framer-motion';
@@ -25,7 +26,7 @@ import { Logo } from './components/UI/Logo.tsx';
 const ReorderGroup = Reorder.Group as any;
 const ReorderItem = Reorder.Item as any;
 
-const APP_VERSION = "3.0.8";
+const APP_VERSION = "3.0.9";
 
 const isVideoUrl = (url: string | undefined): boolean => {
   if (!url) return false;
@@ -241,7 +242,7 @@ const ReorderableStationItem: React.FC<ReorderItemProps> = ({
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
       transition={{ type: "spring", stiffness: 500, damping: 50 }}
-      onDragStart={() => hapticImpact('light')}
+      onDragStart={() => hapticImpact('heavy')}
       whileDrag={{ scale: 1.02, zIndex: 100 }}
       className={`glass-panel flex items-center gap-3 p-2 mb-2 rounded-[1.5rem] group relative border transition-all ${isActive && !isEditMode ? 'bg-white/30 dark:bg-white/10 border-white/40 dark:border-white/20' : 'bg-white/10 dark:bg-black/20 border-white/10 dark:border-white/5'} ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer active:scale-[0.98]'} select-none`}
       onClick={(e: React.MouseEvent) => (isEditMode ? onEdit(e) : onSelect())}
@@ -283,7 +284,7 @@ const ReorderableStationItem: React.FC<ReorderItemProps> = ({
 };
 
 export const App: React.FC = () => {
-  const { hapticImpact, hapticNotification, setBackButton, isMobile, themeParams } = useTelegram();
+  const { hapticImpact, hapticNotification, hapticSelectionChanged, setBackButton, isMobile, themeParams } = useTelegram();
 
   const [stations, setStations] = useState<Station[]>(() => {
     const saved = localStorage.getItem('radio_stations');
@@ -349,10 +350,10 @@ export const App: React.FC = () => {
 
   const navigateStation = useCallback((navDir: 'next' | 'prev') => { 
     if (!swiperInstance) return; 
-    hapticImpact('medium'); 
+    hapticSelectionChanged(); 
     if (navDir === 'next') swiperInstance.slideNext(); 
     else swiperInstance.slidePrev(); 
-  }, [swiperInstance, hapticImpact]);
+  }, [swiperInstance, hapticSelectionChanged]);
 
   const { status, volume, setVolume, play, stop } = useAudio(
     playingStation,
@@ -396,8 +397,10 @@ export const App: React.FC = () => {
     
     if (offset.y > swipeThreshold || velocity.y > 200) {
       setIsExpanded(false);
+      hapticImpact('light');
     } else if (offset.y < -swipeThreshold || velocity.y < -200) {
       setIsExpanded(true);
+      hapticImpact('medium');
     }
   };
 
@@ -458,7 +461,7 @@ export const App: React.FC = () => {
       for(let i=0; i<newStations.length; i++) { if (favorites.includes(newStations[i].id)) newStations[i] = reorderedItems[favIdx++]; }
       setStations(newStations);
     }
-    hapticImpact('light');
+    hapticSelectionChanged();
     setTimeout(() => { isReorderingRef.current = false; }, 50);
   };
 
@@ -781,7 +784,7 @@ export const App: React.FC = () => {
                       }
                     }
                   }
-                  hapticImpact('light');
+                  hapticSelectionChanged();
                 }}
                 loop={displayedStations.length > 1}
                 effect={'creative'}
@@ -902,7 +905,18 @@ export const App: React.FC = () => {
                 </div>
                 
                 <div className="w-full flex flex-col">
-                  <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} onPointerDown={(e) => e.stopPropagation()} className="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full appearance-none transition-all cursor-pointer backdrop-blur-sm" style={{ accentColor: nativeAccentColor }} />
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="1" 
+                    step="0.01" 
+                    value={volume} 
+                    onChange={(e) => setVolume(parseFloat(e.target.value))} 
+                    onPointerDown={(e) => { e.stopPropagation(); hapticImpact('light'); }} 
+                    onPointerUp={(e) => { e.stopPropagation(); hapticSelectionChanged(); }}
+                    className="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full appearance-none transition-all cursor-pointer backdrop-blur-sm" 
+                    style={{ accentColor: nativeAccentColor }} 
+                  />
                 </div>
 
                 <div className="w-full flex items-center justify-between px-2">
@@ -925,8 +939,8 @@ export const App: React.FC = () => {
         <div className="flex-1 flex flex-col w-full overflow-hidden border-t border-white/10 dark:border-white/5 bg-white/20 dark:bg-black/20">
             <div className="w-full flex items-center justify-between px-8 py-4 shrink-0">
                <div className="flex items-center bg-black/5 dark:bg-white/5 rounded-[1.25rem] p-1.5 backdrop-blur-md border border-white/10 flex-1 mr-4">
-                  <button onClick={() => setPlaylistFilter('all')} className={`flex-1 py-2 text-xs font-black rounded-[1rem] transition-all ${playlistFilter === 'all' ? 'bg-white/80 dark:bg-white/10 shadow-sm' : 'opacity-50 hover:opacity-100'}`} style={{ color: playlistFilter === 'all' ? nativeAccentColor : undefined }}>Все</button>
-                  <button onClick={() => setPlaylistFilter('favorites')} className={`flex-1 py-2 text-xs font-black rounded-[1rem] transition-all ${playlistFilter === 'favorites' ? 'bg-white/80 dark:bg-white/10 shadow-sm' : 'opacity-50 hover:opacity-100'}`} style={{ color: playlistFilter === 'favorites' ? nativeAccentColor : undefined }}>Избранное</button>
+                  <button onClick={() => { hapticSelectionChanged(); setPlaylistFilter('all'); }} className={`flex-1 py-2 text-xs font-black rounded-[1rem] transition-all ${playlistFilter === 'all' ? 'bg-white/80 dark:bg-white/10 shadow-sm' : 'opacity-50 hover:opacity-100'}`} style={{ color: playlistFilter === 'all' ? nativeAccentColor : undefined }}>Все</button>
+                  <button onClick={() => { hapticSelectionChanged(); setPlaylistFilter('favorites'); }} className={`flex-1 py-2 text-xs font-black rounded-[1rem] transition-all ${playlistFilter === 'favorites' ? 'bg-white/80 dark:bg-white/10 shadow-sm' : 'opacity-50 hover:opacity-100'}`} style={{ color: playlistFilter === 'favorites' ? nativeAccentColor : undefined }}>Избранное</button>
                </div>
                <RippleButton onClick={() => setIsPlaylistEditMode(!isPlaylistEditMode)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider backdrop-blur-sm border border-white/10 ${isPlaylistEditMode ? 'text-white shadow-lg' : 'bg-black/5 dark:bg-white/10 text-gray-500'}`} style={{ backgroundColor: isPlaylistEditMode ? nativeAccentColor : undefined }}>{isPlaylistEditMode ? 'Готово' : 'РЕДАКТ.'}</RippleButton>
             </div>
@@ -983,7 +997,7 @@ export const App: React.FC = () => {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowSleepTimerModal(false)} />
             <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="glass-panel relative w-full max-w-sm bg-white/90 dark:bg-[#1c1c1c]/90 rounded-[2.5rem] p-8 shadow-2xl text-center border-white/20">
               <h2 className="text-2xl font-black mb-6 drop-shadow-sm">Таймер сна</h2>
-              <div className="grid grid-cols-3 gap-2 mb-4">{[15, 30, 45, 60, 90, 120].map(min => <RippleButton key={min} onClick={() => handleSetSleepTimer(min)} className="py-3 bg-black/5 dark:bg-white/5 rounded-xl font-black transition-all text-xs active:bg-blue-500 active:text-white border border-white/10 hover:bg-white/10">{min} м</RippleButton>)}</div>
+              <div className="grid grid-cols-3 gap-2 mb-4">{[15, 30, 45, 60, 90, 120].map(min => <RippleButton key={min} onClick={() => { hapticSelectionChanged(); handleSetSleepTimer(min); }} className="py-3 bg-black/5 dark:bg-white/5 rounded-xl font-black transition-all text-xs active:bg-blue-500 active:text-white border border-white/10 hover:bg-white/10">{min} м</RippleButton>)}</div>
               <div className="flex gap-2 mb-6"><input type="number" onFocus={handleInputFocus} value={customSleepMinutes} onChange={(e) => setCustomSleepMinutes(e.target.value)} placeholder="Минуты" className="flex-1 bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 font-bold outline-none text-center border border-transparent focus:border-blue-500/50" /><RippleButton onClick={() => { const val = parseInt(customSleepMinutes); if (!isNaN(val) && val > 0) handleSetSleepTimer(val); }} disabled={!customSleepMinutes} className="px-6 rounded-xl text-white font-black transition-opacity disabled:opacity-20 shadow-lg" style={{ backgroundColor: nativeAccentColor }}>OK</RippleButton></div>
               <RippleButton onClick={() => handleSetSleepTimer(0)} className="w-full py-4 text-red-500 bg-red-500/10 rounded-2xl font-black hover:bg-red-500/20">Отключить</RippleButton>
             </motion.div>
