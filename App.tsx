@@ -1,5 +1,5 @@
 
-// Build: 3.0.7
+// Build: 3.0.8
 // - Logic: Enhanced JSON extraction (Markdown support).
 // - UX: Auto-detection of content type (JSON/M3U) on paste in manual import.
 // - Logic: Added strict duplicate check when adding single stations.
@@ -7,7 +7,7 @@
 // - UI: Fixed control panel overflow on small screens (responsive flex layout).
 // - Perf: Merged Controls and Playlist into a single persistent sheet to eliminate animation lag.
 // - UX: Enhanced empty favorites state with clear CTA and visuals.
-// - UX: Controls automatically hide when playlist is expanded.
+// - Animation: Controls now slide down and fade out when playlist expands.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls, PanInfo } from 'framer-motion';
@@ -25,7 +25,7 @@ import { Logo } from './components/UI/Logo.tsx';
 const ReorderGroup = Reorder.Group as any;
 const ReorderItem = Reorder.Item as any;
 
-const APP_VERSION = "3.0.7";
+const APP_VERSION = "3.0.8";
 
 const isVideoUrl = (url: string | undefined): boolean => {
   if (!url) return false;
@@ -886,10 +886,10 @@ export const App: React.FC = () => {
           <AnimatePresence>
             {!isExpanded && (
               <motion.div
-                initial={{ height: 'auto', opacity: 1, marginBottom: 24 }}
-                animate={{ height: 'auto', opacity: 1, marginBottom: 24 }}
-                exit={{ height: 0, opacity: 0, marginBottom: 0, overflow: 'hidden' }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                initial={{ height: 0, opacity: 0, y: 20 }}
+                animate={{ height: 'auto', opacity: 1, y: 0, marginBottom: 24 }}
+                exit={{ height: 0, opacity: 0, y: 30, marginBottom: 0, overflow: 'hidden' }}
+                transition={{ duration: 0.35, ease: 'easeInOut' }}
                 className="w-full max-w-[360px] flex flex-col gap-6"
               >
                 <div className="text-center w-full px-2 min-h-[50px] flex flex-col justify-center">
