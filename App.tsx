@@ -1,11 +1,13 @@
 
-// Build: 3.0.5
+// Build: 3.0.7
 // - Logic: Enhanced JSON extraction (Markdown support).
 // - UX: Auto-detection of content type (JSON/M3U) on paste in manual import.
 // - Logic: Added strict duplicate check when adding single stations.
 // - UI: Fixed corner bleeding artifacts on station covers using WebkitMaskImage.
 // - UI: Fixed control panel overflow on small screens (responsive flex layout).
 // - Perf: Merged Controls and Playlist into a single persistent sheet to eliminate animation lag.
+// - UX: Enhanced empty favorites state with clear CTA and visuals.
+// - UX: Controls automatically hide when playlist is expanded.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls, PanInfo } from 'framer-motion';
@@ -23,7 +25,7 @@ import { Logo } from './components/UI/Logo.tsx';
 const ReorderGroup = Reorder.Group as any;
 const ReorderItem = Reorder.Item as any;
 
-const APP_VERSION = "3.0.5";
+const APP_VERSION = "3.0.7";
 
 const isVideoUrl = (url: string | undefined): boolean => {
   if (!url) return false;
@@ -820,18 +822,26 @@ export const App: React.FC = () => {
               </Swiper>
             ) : (
               <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="glass-panel w-full h-full flex flex-col items-center justify-center text-center p-8 rounded-[3rem]">
-                <div className="mb-6 opacity-40 text-black dark:text-white">
-                  {onlyFavoritesMode && hasStations ? <Icons.Star className="w-16 h-16 mx-auto text-amber-500" /> : <Icons.List className="w-16 h-16 mx-auto" />}
+                <div className="mb-6 text-black dark:text-white relative">
+                  {onlyFavoritesMode && hasStations ? (
+                     <>
+                       <div className="absolute inset-0 bg-amber-500/20 blur-xl rounded-full animate-pulse" />
+                       <Icons.Star className="w-20 h-20 mx-auto text-amber-500 relative z-10 drop-shadow-lg" />
+                     </>
+                  ) : (
+                     <Icons.List className="w-20 h-20 mx-auto opacity-40" />
+                  )}
                 </div>
-                <h2 className="text-2xl font-black mb-2 opacity-80 drop-shadow-sm">
+                <h2 className="text-2xl font-black mb-2 opacity-90 drop-shadow-sm">
                   {onlyFavoritesMode && hasStations ? 'Нет избранных' : 'Плейлист пуст'}
                 </h2>
-                <p className="text-sm opacity-60 mb-8 font-medium">
-                  {onlyFavoritesMode && hasStations ? 'Добавьте станции в избранное или отключите фильтр' : 'Добавьте свою станцию, импортируйте из буфера или загрузите демо'}
+                <p className="text-sm opacity-60 mb-8 font-medium max-w-[200px] leading-snug">
+                  {onlyFavoritesMode && hasStations ? 'У вас пока нет любимых станций. Переключитесь на общий список, чтобы найти их.' : 'Добавьте свою станцию, импортируйте из буфера или загрузите демо'}
                 </p>
                 <div className="flex flex-col gap-3 w-full max-w-[240px]">
                   {onlyFavoritesMode && hasStations ? (
-                    <RippleButton onClick={() => setOnlyFavoritesMode(false)} className="w-full py-4 text-white rounded-2xl font-black shadow-lg text-base border border-white/20" style={{ backgroundColor: nativeAccentColor }}>
+                    <RippleButton onClick={toggleOnlyFavoritesMode} className="w-full py-4 text-white rounded-2xl font-black shadow-lg text-sm border border-white/20 flex items-center justify-center gap-2" style={{ backgroundColor: nativeAccentColor }}>
+                      <Icons.List className="w-5 h-5" />
                       Показать все станции
                     </RippleButton>
                   ) : (
@@ -868,38 +878,47 @@ export const App: React.FC = () => {
         className="fixed bottom-0 left-0 right-0 h-[85vh] z-30 flex flex-col glass-panel shadow-[0_-10px_40px_rgba(0,0,0,0.2)] rounded-t-[3.5rem] border-t border-white/30 dark:border-white/10"
         style={{ touchAction: 'none' }}
       >
-        {/* Controls Section (Always Visible Handle) */}
-        <div className="w-full flex flex-col items-center pt-2 pb-6 px-5 shrink-0 relative" onPointerDown={(e) => !isPlaylistEditMode && dragControls.start(e)}>
-          {/* Drag Handle */}
-          <div className="w-12 h-1.5 bg-black/20 dark:bg-white/20 rounded-full mb-6 cursor-grab active:cursor-grabbing" />
+        {/* Controls Section Container */}
+        <div className="w-full flex flex-col items-center pt-2 px-5 shrink-0 relative" onPointerDown={(e) => !isPlaylistEditMode && dragControls.start(e)}>
+          {/* Drag Handle (Always Visible) */}
+          <div className="w-12 h-1.5 bg-black/20 dark:bg-white/20 rounded-full mb-6 cursor-grab active:cursor-grabbing shrink-0" />
           
-          <div className="w-full max-w-[360px] flex flex-col gap-6">
-            <div className="text-center w-full px-2 min-h-[50px] flex flex-col justify-center">
-              <AnimatePresence mode="wait">
-                <motion.div key={activeStation?.id || 'none'} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                  <h2 className="text-xl font-black truncate leading-tight tracking-tight drop-shadow-sm">{activeStation?.name || (hasStations ? '...' : 'Радио')}</h2>
-                  <p className="text-[10px] opacity-50 uppercase tracking-[0.3em] font-black mt-1">{isActuallyPlaying ? (status === 'loading' ? 'Загрузка...' : 'В эфире') : (hasStations ? 'Пауза' : 'Нет станций')}</p>
-                </motion.div>
-              </AnimatePresence>
-            </div>
-            
-            <div className="w-full flex flex-col">
-              <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} onPointerDown={(e) => e.stopPropagation()} className="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full appearance-none transition-all cursor-pointer backdrop-blur-sm" style={{ accentColor: nativeAccentColor }} />
-            </div>
+          <AnimatePresence>
+            {!isExpanded && (
+              <motion.div
+                initial={{ height: 'auto', opacity: 1, marginBottom: 24 }}
+                animate={{ height: 'auto', opacity: 1, marginBottom: 24 }}
+                exit={{ height: 0, opacity: 0, marginBottom: 0, overflow: 'hidden' }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                className="w-full max-w-[360px] flex flex-col gap-6"
+              >
+                <div className="text-center w-full px-2 min-h-[50px] flex flex-col justify-center">
+                  <AnimatePresence mode="wait">
+                    <motion.div key={activeStation?.id || 'none'} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                      <h2 className="text-xl font-black truncate leading-tight tracking-tight drop-shadow-sm">{activeStation?.name || (hasStations ? '...' : 'Радио')}</h2>
+                      <p className="text-[10px] opacity-50 uppercase tracking-[0.3em] font-black mt-1">{isActuallyPlaying ? (status === 'loading' ? 'Загрузка...' : 'В эфире') : (hasStations ? 'Пауза' : 'Нет станций')}</p>
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+                
+                <div className="w-full flex flex-col">
+                  <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} onPointerDown={(e) => e.stopPropagation()} className="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full appearance-none transition-all cursor-pointer backdrop-blur-sm" style={{ accentColor: nativeAccentColor }} />
+                </div>
 
-            <div className="w-full flex items-center justify-between px-2">
-              <RippleButton onClick={(e) => { e.stopPropagation(); navigateStation('prev'); }} className={`p-4 transition-all hover:bg-black/5 dark:hover:bg-white/10 rounded-full ${displayedStations.length > 1 ? 'opacity-70 hover:opacity-100' : 'opacity-20 pointer-events-none'}`}><Icons.Prev /></RippleButton>
-              <RippleButton onClick={(e) => { e.stopPropagation(); handleTogglePlay(); }} disabled={!hasStations} className={`w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-xl text-white active:scale-90 border-4 border-white/20 ${!hasStations ? 'opacity-30 grayscale pointer-events-none' : ''}`} style={{ backgroundColor: nativeAccentColor, boxShadow: `0 15px 40px -5px ${nativeAccentColor}77` }}>
-                {isActuallyPlaying ? <Icons.Pause className="w-8 h-8" /> : <Icons.Play className="w-8 h-8 ml-1" />}
-              </RippleButton>
-              <RippleButton onClick={(e) => { e.stopPropagation(); navigateStation('next'); }} className={`p-4 transition-all hover:bg-black/5 dark:hover:bg-white/10 rounded-full ${displayedStations.length > 1 ? 'opacity-70 hover:opacity-100' : 'opacity-20 pointer-events-none'}`}><Icons.Next /></RippleButton>
-            </div>
-          </div>
-          
-          {/* Playlist Hint (Visible only when collapsed) */}
-          <motion.div animate={{ opacity: isExpanded ? 0 : 1 }} className="flex flex-col items-center gap-2 mt-6 text-black/20 dark:text-white/20 w-full active:scale-105 transition-transform cursor-pointer">
-            <span className="text-[9px] uppercase font-black tracking-[0.3em] text-center ml-1 opacity-60">Плейлист</span>
-          </motion.div>
+                <div className="w-full flex items-center justify-between px-2">
+                  <RippleButton onClick={(e) => { e.stopPropagation(); navigateStation('prev'); }} className={`p-4 transition-all hover:bg-black/5 dark:hover:bg-white/10 rounded-full ${displayedStations.length > 1 ? 'opacity-70 hover:opacity-100' : 'opacity-20 pointer-events-none'}`}><Icons.Prev /></RippleButton>
+                  <RippleButton onClick={(e) => { e.stopPropagation(); handleTogglePlay(); }} disabled={!hasStations} className={`w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-xl text-white active:scale-90 border-4 border-white/20 ${!hasStations ? 'opacity-30 grayscale pointer-events-none' : ''}`} style={{ backgroundColor: nativeAccentColor, boxShadow: `0 15px 40px -5px ${nativeAccentColor}77` }}>
+                    {isActuallyPlaying ? <Icons.Pause className="w-8 h-8" /> : <Icons.Play className="w-8 h-8 ml-1" />}
+                  </RippleButton>
+                  <RippleButton onClick={(e) => { e.stopPropagation(); navigateStation('next'); }} className={`p-4 transition-all hover:bg-black/5 dark:hover:bg-white/10 rounded-full ${displayedStations.length > 1 ? 'opacity-70 hover:opacity-100' : 'opacity-20 pointer-events-none'}`}><Icons.Next /></RippleButton>
+                </div>
+
+                <div className="flex flex-col items-center gap-2 mt-2 text-black/20 dark:text-white/20 w-full active:scale-105 transition-transform cursor-pointer">
+                   <span className="text-[9px] uppercase font-black tracking-[0.3em] text-center ml-1 opacity-60">Плейлист</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Playlist Content (Scrollable) */}
