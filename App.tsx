@@ -1,12 +1,14 @@
 
-// Build: 3.0.3
+// Build: 3.0.5
 // - Logic: Enhanced JSON extraction (Markdown support).
 // - UX: Auto-detection of content type (JSON/M3U) on paste in manual import.
 // - Logic: Added strict duplicate check when adding single stations.
 // - UI: Fixed corner bleeding artifacts on station covers using WebkitMaskImage.
+// - UI: Fixed control panel overflow on small screens (responsive flex layout).
+// - Perf: Merged Controls and Playlist into a single persistent sheet to eliminate animation lag.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
+import { motion, AnimatePresence, Reorder, useDragControls, PanInfo } from 'framer-motion';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { EffectCreative, Keyboard } from 'swiper/modules';
 import type { Swiper as SwiperClass } from 'swiper';
@@ -21,7 +23,7 @@ import { Logo } from './components/UI/Logo.tsx';
 const ReorderGroup = Reorder.Group as any;
 const ReorderItem = Reorder.Item as any;
 
-const APP_VERSION = "3.0.3";
+const APP_VERSION = "3.0.5";
 
 const isVideoUrl = (url: string | undefined): boolean => {
   if (!url) return false;
@@ -297,7 +299,7 @@ export const App: React.FC = () => {
   const [playingStationId, setPlayingStationId] = useState<string>(() => localStorage.getItem('radio_last_playing') || '');
   const [lastPlayedFavoriteId, setLastPlayedFavoriteId] = useState<string>(() => localStorage.getItem('radio_last_fav') || '');
 
-  const [showPlaylist, setShowPlaylist] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isPlaylistEditMode, setIsPlaylistEditMode] = useState(false);
   const [playlistFilter, setPlaylistFilter] = useState<'all' | 'favorites'>('all');
   const [showEditor, setShowEditor] = useState(false);
@@ -382,7 +384,19 @@ export const App: React.FC = () => {
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (isPlaylistEditMode) return;
     const distance = e.changedTouches[0].clientY - touchStartRef.current;
-    if (distance > 70 && listRef.current && listRef.current.scrollTop <= 0) setShowPlaylist(false);
+    if (distance > 70 && listRef.current && listRef.current.scrollTop <= 0) setIsExpanded(false);
+  };
+
+  const handleDragEnd = (_: any, info: PanInfo) => {
+    if (isPlaylistEditMode) return;
+    const { offset, velocity } = info;
+    const swipeThreshold = 50;
+    
+    if (offset.y > swipeThreshold || velocity.y > 200) {
+      setIsExpanded(false);
+    } else if (offset.y < -swipeThreshold || velocity.y < -200) {
+      setIsExpanded(true);
+    }
   };
 
   useEffect(() => { localStorage.setItem('radio_stations', JSON.stringify(stations)); }, [stations]);
@@ -625,13 +639,13 @@ export const App: React.FC = () => {
   }, [stations, favorites, hapticImpact, hapticNotification]);
 
   const closeAllModals = useCallback(() => { 
-    setShowEditor(false); setShowPlaylist(false); setShowConfirmModal(false); setShowSleepTimerModal(false); setShowAboutModal(false); setShowExportModal(false); setShowImportModal(false);
+    setShowEditor(false); setIsExpanded(false); setShowConfirmModal(false); setShowSleepTimerModal(false); setShowAboutModal(false); setShowExportModal(false); setShowImportModal(false);
     setEditingStation(null); setIsPlaylistEditMode(false); setEditorCoverPreview(''); setShowManualImportArea(false); setManualImportText('');
   }, []);
 
   const toggleMute = useCallback(() => { if (volume > 0) { setVolume(0); setSnackbar('Звук выключен'); hapticImpact('soft'); } else { setVolume(0.5); setSnackbar('Звук включен'); hapticImpact('rigid'); } }, [volume, setVolume, hapticImpact]);
 
-  useEffect(() => { const isModalOpen = showEditor || showPlaylist || showConfirmModal || showSleepTimerModal || showAboutModal || showExportModal || showImportModal; setBackButton(isModalOpen, closeAllModals); }, [showEditor, showPlaylist, showConfirmModal, showSleepTimerModal, showAboutModal, showExportModal, showImportModal, setBackButton, closeAllModals]);
+  useEffect(() => { const isModalOpen = showEditor || isExpanded || showConfirmModal || showSleepTimerModal || showAboutModal || showExportModal || showImportModal; setBackButton(isModalOpen, closeAllModals); }, [showEditor, isExpanded, showConfirmModal, showSleepTimerModal, showAboutModal, showExportModal, showImportModal, setBackButton, closeAllModals]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -712,6 +726,9 @@ export const App: React.FC = () => {
   const nativeBgColor = themeParams?.bg_color || '#ffffff';
   const nativeTextColor = themeParams?.text_color || '#222222';
 
+  const expandedSheetY = 0;
+  const collapsedSheetY = "calc(100% - 240px - env(safe-area-inset-bottom, 0px))";
+
   return (
     <div className="flex flex-col overflow-hidden transition-colors duration-500 select-none relative" style={{ height: 'var(--tg-viewport-height, 100vh)', color: nativeTextColor, backgroundColor: nativeBgColor }}>
       {/* Liquid Glass Background Blobs */}
@@ -735,152 +752,167 @@ export const App: React.FC = () => {
               {sleepTimerEndDate ? <motion.span key="time" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="font-black text-sm leading-none whitespace-nowrap">{timeRemaining ? `${Math.ceil((sleepTimerEndDate - Date.now()) / 60000)}m` : '...'}</motion.span> : <motion.div key="icon" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}><Icons.Timer /></motion.div>}
             </AnimatePresence>
           </motion.button>
-          <RippleButton onClick={() => { setShowPlaylist(true); setIsPlaylistEditMode(false); }} className="w-[38px] h-[38px] flex items-center justify-center rounded-full bg-white/10 dark:bg-black/20 border border-white/20 text-gray-400 dark:text-gray-400 hover:bg-white/20 shadow-md"><Icons.List /></RippleButton>
+          <RippleButton onClick={() => { setIsExpanded(!isExpanded); setIsPlaylistEditMode(false); }} className="w-[38px] h-[38px] flex items-center justify-center rounded-full bg-white/10 dark:bg-black/20 border border-white/20 text-gray-400 dark:text-gray-400 hover:bg-white/20 shadow-md"><Icons.List /></RippleButton>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col items-center justify-evenly py-6 overflow-hidden relative z-10">
+      {/* Main Content (Swiper) */}
+      <main className="flex-1 flex flex-col items-center relative z-10 w-full overflow-hidden mb-[240px]">
         {/* Swiper / Main Card */}
-        <div className="relative w-[340px] aspect-square shrink-0 transition-all duration-500">
-          {displayedStations.length > 0 ? (
-            <Swiper
-              key={`swiper-${displayedStations.length}-${onlyFavoritesMode}`}
-              initialSlide={displayedStations.findIndex(s => s.id === activeStationId) || 0}
-              onSwiper={setSwiperInstance}
-              onSlideChange={(swiper) => {
-                if (isReorderingRef.current) return;
-                const targetStation = displayedStations[swiper.realIndex];
-                if (targetStation && targetStation.id !== activeStationId) {
-                  setActiveStationId(targetStation.id);
-                  if (status === 'playing' || status === 'loading') {
-                    if (targetStation.id !== playingStationId) {
-                      setPlayingStationId(targetStation.id);
-                      if (favorites.includes(targetStation.id)) setLastPlayedFavoriteId(targetStation.id);
-                      play(targetStation.streamUrl, targetStation); 
+        <div className="flex-1 flex items-center justify-center w-full min-h-0 px-6 py-2">
+          <div className="relative w-full max-w-[320px] aspect-square shrink-0 transition-all duration-500">
+            {displayedStations.length > 0 ? (
+              <Swiper
+                key={`swiper-${displayedStations.length}-${onlyFavoritesMode}`}
+                initialSlide={displayedStations.findIndex(s => s.id === activeStationId) || 0}
+                onSwiper={setSwiperInstance}
+                onSlideChange={(swiper) => {
+                  if (isReorderingRef.current) return;
+                  const targetStation = displayedStations[swiper.realIndex];
+                  if (targetStation && targetStation.id !== activeStationId) {
+                    setActiveStationId(targetStation.id);
+                    if (status === 'playing' || status === 'loading') {
+                      if (targetStation.id !== playingStationId) {
+                        setPlayingStationId(targetStation.id);
+                        if (favorites.includes(targetStation.id)) setLastPlayedFavoriteId(targetStation.id);
+                        play(targetStation.streamUrl, targetStation); 
+                      }
                     }
                   }
-                }
-                hapticImpact('light');
-              }}
-              loop={displayedStations.length > 1}
-              effect={'creative'}
-              creativeEffect={{ limitProgress: 3, perspective: true, prev: { translate: ['-100%', 0, -200], rotate: [0, 0, -15], opacity: 0 }, next: { translate: ['100%', 0, -200], rotate: [0, 0, 15], opacity: 0 } }}
-              modules={[EffectCreative, Keyboard]}
-              keyboard={{ enabled: true }}
-              className="mySwiper w-full h-full !overflow-visible"
-            >
-              {displayedStations.map((station) => (
-                <SwiperSlide key={station.id} className="w-full h-full flex justify-center">
-                  <div className="relative w-full aspect-square group" onClick={() => handleTogglePlay()}>
-                    <motion.div animate={{ scale: activeStationId === station.id ? [1, 0.965, 1] : 1 }} transition={{ duration: 0.45, type: "spring", stiffness: 280, damping: 18 }} className="relative z-10 w-full h-full">
-                      {/* Thick Glass Card Style */}
-                      <motion.div 
-                        className="w-full h-full rounded-[2.5rem] overflow-hidden bg-white/30 dark:bg-white/5 backdrop-blur-xl border border-white/40 dark:border-white/10 transition-colors duration-700 relative shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] isolate" 
-                        style={{ 
-                          borderColor: activeStationId === station.id ? `${nativeAccentColor}88` : 'rgba(255,255,255,0.4)',
-                          WebkitMaskImage: '-webkit-radial-gradient(white, black)',
-                          maskImage: 'radial-gradient(white, black)'
-                        }}
-                      >
-                        <StationCover station={station} className="w-full h-full opacity-90 rounded-[inherit]" isPlaying={playingStationId === station.id && isActuallyPlaying} />
-                        <AnimatePresence mode="popLayout">
-                          {activeStationId === station.id && (
-                            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[2.5rem] z-40">
-                              <motion.div key={`silk-${actionTrigger}`} initial={{ x: '-160%', opacity: 0 }} animate={{ x: '160%', opacity: [0, 0.3, 0] }} exit={{ opacity: 0 }} transition={{ duration: 0.9, ease: [0.33, 1, 0.68, 1] }} className="absolute inset-0 w-[80%] h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -skew-x-[35deg] blur-lg" />
-                            </div>
-                          )}
-                        </AnimatePresence>
-                        <div className="absolute bottom-6 right-6 z-30" onClick={(e) => { e.stopPropagation(); toggleFavorite(station.id, e); }}>
-                          <RippleButton className={`w-14 h-14 rounded-full flex items-center justify-center transition-all backdrop-blur-md border border-white/30 shadow-lg ${favorites.includes(station.id) ? 'bg-amber-500/80 text-white scale-105 shadow-amber-500/40' : 'bg-black/40 text-white/80'}`}>{favorites.includes(station.id) ? <Icons.Star /> : <Icons.StarOutline />}</RippleButton>
-                        </div>
+                  hapticImpact('light');
+                }}
+                loop={displayedStations.length > 1}
+                effect={'creative'}
+                creativeEffect={{ limitProgress: 3, perspective: true, prev: { translate: ['-100%', 0, -200], rotate: [0, 0, -15], opacity: 0 }, next: { translate: ['100%', 0, -200], rotate: [0, 0, 15], opacity: 0 } }}
+                modules={[EffectCreative, Keyboard]}
+                keyboard={{ enabled: true }}
+                className="mySwiper w-full h-full !overflow-visible"
+              >
+                {displayedStations.map((station) => (
+                  <SwiperSlide key={station.id} className="w-full h-full flex justify-center">
+                    <div className="relative w-full aspect-square group" onClick={() => handleTogglePlay()}>
+                      <motion.div animate={{ scale: activeStationId === station.id ? [1, 0.965, 1] : 1 }} transition={{ duration: 0.45, type: "spring", stiffness: 280, damping: 18 }} className="relative z-10 w-full h-full">
+                        {/* Thick Glass Card Style */}
+                        <motion.div 
+                          className="w-full h-full rounded-[2.5rem] overflow-hidden bg-white/30 dark:bg-white/5 backdrop-blur-xl border border-white/40 dark:border-white/10 transition-colors duration-700 relative shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] isolate" 
+                          style={{ 
+                            borderColor: activeStationId === station.id ? `${nativeAccentColor}88` : 'rgba(255,255,255,0.4)',
+                            WebkitMaskImage: '-webkit-radial-gradient(white, black)',
+                            maskImage: 'radial-gradient(white, black)'
+                          }}
+                        >
+                          <StationCover station={station} className="w-full h-full opacity-90 rounded-[inherit]" isPlaying={playingStationId === station.id && isActuallyPlaying} />
+                          <AnimatePresence mode="popLayout">
+                            {activeStationId === station.id && (
+                              <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[2.5rem] z-40">
+                                <motion.div key={`silk-${actionTrigger}`} initial={{ x: '-160%', opacity: 0 }} animate={{ x: '160%', opacity: [0, 0.3, 0] }} exit={{ opacity: 0 }} transition={{ duration: 0.9, ease: [0.33, 1, 0.68, 1] }} className="absolute inset-0 w-[80%] h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -skew-x-[35deg] blur-lg" />
+                              </div>
+                            )}
+                          </AnimatePresence>
+                          <div className="absolute bottom-6 right-6 z-30" onClick={(e) => { e.stopPropagation(); toggleFavorite(station.id, e); }}>
+                            <RippleButton className={`w-14 h-14 rounded-full flex items-center justify-center transition-all backdrop-blur-md border border-white/30 shadow-lg ${favorites.includes(station.id) ? 'bg-amber-500/80 text-white scale-105 shadow-amber-500/40' : 'bg-black/40 text-white/80'}`}>{favorites.includes(station.id) ? <Icons.Star /> : <Icons.StarOutline />}</RippleButton>
+                          </div>
+                        </motion.div>
                       </motion.div>
-                    </motion.div>
-                  </div>
-                </SwiperSlide>
-              ))}
-            </Swiper>
-          ) : (
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="glass-panel w-full h-full flex flex-col items-center justify-center text-center p-8 rounded-[3rem]">
-              <div className="mb-6 opacity-40 text-black dark:text-white">
-                {onlyFavoritesMode && hasStations ? <Icons.Star className="w-16 h-16 mx-auto text-amber-500" /> : <Icons.List className="w-16 h-16 mx-auto" />}
-              </div>
-              <h2 className="text-2xl font-black mb-2 opacity-80 drop-shadow-sm">
-                {onlyFavoritesMode && hasStations ? 'Нет избранных' : 'Плейлист пуст'}
-              </h2>
-              <p className="text-sm opacity-60 mb-8 font-medium">
-                {onlyFavoritesMode && hasStations ? 'Добавьте станции в избранное или отключите фильтр' : 'Добавьте свою станцию, импортируйте из буфера или загрузите демо'}
-              </p>
-              <div className="flex flex-col gap-3 w-full max-w-[240px]">
-                {onlyFavoritesMode && hasStations ? (
-                  <RippleButton onClick={() => setOnlyFavoritesMode(false)} className="w-full py-4 text-white rounded-2xl font-black shadow-lg text-base border border-white/20" style={{ backgroundColor: nativeAccentColor }}>
-                    Показать все станции
-                  </RippleButton>
-                ) : (
-                  <>
-                    <RippleButton onClick={() => { setEditingStation(null); setShowEditor(true); }} className="w-full py-4 text-white rounded-2xl font-black shadow-lg text-base border border-white/20" style={{ backgroundColor: nativeAccentColor }}>
-                      Добавить станцию
+                    </div>
+                  </SwiperSlide>
+                ))}
+              </Swiper>
+            ) : (
+              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="glass-panel w-full h-full flex flex-col items-center justify-center text-center p-8 rounded-[3rem]">
+                <div className="mb-6 opacity-40 text-black dark:text-white">
+                  {onlyFavoritesMode && hasStations ? <Icons.Star className="w-16 h-16 mx-auto text-amber-500" /> : <Icons.List className="w-16 h-16 mx-auto" />}
+                </div>
+                <h2 className="text-2xl font-black mb-2 opacity-80 drop-shadow-sm">
+                  {onlyFavoritesMode && hasStations ? 'Нет избранных' : 'Плейлист пуст'}
+                </h2>
+                <p className="text-sm opacity-60 mb-8 font-medium">
+                  {onlyFavoritesMode && hasStations ? 'Добавьте станции в избранное или отключите фильтр' : 'Добавьте свою станцию, импортируйте из буфера или загрузите демо'}
+                </p>
+                <div className="flex flex-col gap-3 w-full max-w-[240px]">
+                  {onlyFavoritesMode && hasStations ? (
+                    <RippleButton onClick={() => setOnlyFavoritesMode(false)} className="w-full py-4 text-white rounded-2xl font-black shadow-lg text-base border border-white/20" style={{ backgroundColor: nativeAccentColor }}>
+                      Показать все станции
                     </RippleButton>
-                    <RippleButton onClick={() => setShowImportModal(true)} className="w-full py-4 bg-white/20 dark:bg-black/20 backdrop-blur-sm rounded-2xl font-black text-base border border-white/10 hover:bg-white/30 text-black dark:text-white">
-                      Импорт из буфера
-                    </RippleButton>
-                    <RippleButton onClick={loadDemoList} className="w-full py-4 bg-white/10 dark:bg-black/10 backdrop-blur-sm rounded-2xl font-black opacity-60 text-base border border-white/5 hover:bg-white/20 text-black dark:text-white">
-                      Демо-список
-                    </RippleButton>
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </div>
-
-        {/* Player Controls (Floating Glass Pill) */}
-        <div className="w-full max-w-[360px] px-2 z-10 transition-all duration-500">
-          <motion.div layout className="glass-panel w-full flex flex-col items-center rounded-[3.5rem] py-8 px-6 relative shadow-2xl" drag="y" dragConstraints={{ top: 0, bottom: 0 }} onDragEnd={(_, info) => info.offset.y < -50 && setShowPlaylist(true)}>
-            <div className="w-full flex flex-col items-center gap-6">
-              <div className="text-center w-full px-2 min-h-[50px] flex flex-col justify-center">
-                <AnimatePresence mode="wait">
-                  <motion.div key={activeStation?.id || 'none'} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                    <h2 className="text-xl font-black truncate leading-tight tracking-tight drop-shadow-sm">{activeStation?.name || (hasStations ? '...' : 'Радио')}</h2>
-                    <p className="text-[10px] opacity-50 uppercase tracking-[0.3em] font-black mt-1">{isActuallyPlaying ? (status === 'loading' ? 'Загрузка...' : 'В эфире') : (hasStations ? 'Пауза' : 'Нет станций')}</p>
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-              <div className="w-full max-w-[240px] flex flex-col">
-                <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} className="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full appearance-none transition-all cursor-pointer backdrop-blur-sm" style={{ accentColor: nativeAccentColor }} />
-              </div>
-              <div className="w-full flex items-center justify-between px-2">
-                <RippleButton onClick={() => navigateStation('prev')} className={`p-4 transition-all hover:bg-black/5 dark:hover:bg-white/10 rounded-full ${displayedStations.length > 1 ? 'opacity-70 hover:opacity-100' : 'opacity-20 pointer-events-none'}`}><Icons.Prev /></RippleButton>
-                <RippleButton onClick={() => handleTogglePlay()} disabled={!hasStations} className={`w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-xl text-white active:scale-90 border-4 border-white/20 ${!hasStations ? 'opacity-30 grayscale pointer-events-none' : ''}`} style={{ backgroundColor: nativeAccentColor, boxShadow: `0 15px 40px -5px ${nativeAccentColor}77` }}>
-                  {isActuallyPlaying ? <Icons.Pause className="w-8 h-8" /> : <Icons.Play className="w-8 h-8 ml-1" />}
-                </RippleButton>
-                <RippleButton onClick={() => navigateStation('next')} className={`p-4 transition-all hover:bg-black/5 dark:hover:bg-white/10 rounded-full ${displayedStations.length > 1 ? 'opacity-70 hover:opacity-100' : 'opacity-20 pointer-events-none'}`}><Icons.Next /></RippleButton>
-              </div>
-            </div>
-            <div className="flex flex-col items-center gap-2 mt-6 text-black/20 dark:text-white/20 w-full active:scale-105 transition-transform cursor-pointer">
-              <div className="w-12 h-1 rounded-full bg-current mx-auto opacity-70" /><span className="text-[9px] uppercase font-black tracking-[0.3em] text-center ml-1 opacity-60">Плейлист</span>
-            </div>
-          </motion.div>
+                  ) : (
+                    <>
+                      <RippleButton onClick={() => { setEditingStation(null); setShowEditor(true); }} className="w-full py-4 text-white rounded-2xl font-black shadow-lg text-base border border-white/20" style={{ backgroundColor: nativeAccentColor }}>
+                        Добавить станцию
+                      </RippleButton>
+                      <RippleButton onClick={() => setShowImportModal(true)} className="w-full py-4 bg-white/20 dark:bg-black/20 backdrop-blur-sm rounded-2xl font-black text-base border border-white/10 hover:bg-white/30 text-black dark:text-white">
+                        Импорт из буфера
+                      </RippleButton>
+                      <RippleButton onClick={loadDemoList} className="w-full py-4 bg-white/10 dark:bg-black/10 backdrop-blur-sm rounded-2xl font-black opacity-60 text-base border border-white/5 hover:bg-white/20 text-black dark:text-white">
+                        Демо-список
+                      </RippleButton>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </div>
         </div>
       </main>
 
-      {/* Playlist Modal (Glass Sheet) */}
-      <AnimatePresence>
-        {showPlaylist && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/40 z-30 backdrop-blur-sm" onClick={closeAllModals} />
-            <motion.div drag={isPlaylistEditMode ? false : "y"} dragListener={!isPlaylistEditMode} dragControls={dragControls} dragDirectionLock dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 1 }} dragMomentum={false} onDragEnd={(_, info) => (info.offset.y > 100 || info.velocity.y > 500) && setShowPlaylist(false)} initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', bounce: 0, duration: 0.5 }} className="fixed bottom-0 left-0 right-0 h-[92vh] bg-white/60 dark:bg-black/60 rounded-t-[3.5rem] z-40 flex flex-col overflow-hidden pb-10 border-t border-white/30 dark:border-white/10 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
-              <div className="w-full flex items-center justify-between px-8 pt-7 pb-3 shrink-0 touch-none">
-                <div className="w-32" /> <div className="w-12 h-1.5 bg-black/20 dark:bg-white/20 rounded-full cursor-grab active:cursor-grabbing" onPointerDown={(e) => !isPlaylistEditMode && dragControls.start(e)} />
-                <div className="w-32 text-right"><RippleButton onClick={() => setIsPlaylistEditMode(!isPlaylistEditMode)} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider backdrop-blur-sm border border-white/10 ${isPlaylistEditMode ? 'text-white shadow-lg' : 'bg-black/5 dark:bg-white/10 text-gray-500'}`} style={{ backgroundColor: isPlaylistEditMode ? nativeAccentColor : undefined }}>{isPlaylistEditMode ? 'Готово' : 'РЕДАКТ.'}</RippleButton></div>
-              </div>
-              <div className="px-6 py-4">
-                <div className="flex items-center bg-black/5 dark:bg-white/5 rounded-[1.25rem] p-1.5 backdrop-blur-md border border-white/10">
-                  <button onClick={() => setPlaylistFilter('all')} className={`flex-1 py-3 text-sm font-black rounded-[1rem] transition-all ${playlistFilter === 'all' ? 'bg-white/80 dark:bg-white/10 shadow-sm' : 'opacity-50 hover:opacity-100'}`} style={{ color: playlistFilter === 'all' ? nativeAccentColor : undefined }}>Все станции</button>
-                  <button onClick={() => setPlaylistFilter('favorites')} className={`flex-1 py-3 text-sm font-black rounded-[1rem] transition-all ${playlistFilter === 'favorites' ? 'bg-white/80 dark:bg-white/10 shadow-sm' : 'opacity-50 hover:opacity-100'}`} style={{ color: playlistFilter === 'favorites' ? nativeAccentColor : undefined }}>Избранное</button>
-                </div>
-              </div>
-              <div ref={listRef} className="flex-1 overflow-y-auto px-6 flex flex-col overscroll-contain no-scrollbar" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      {/* Unified Bottom Sheet (Controls + Playlist) */}
+      <motion.div 
+        drag={isPlaylistEditMode ? false : "y"} 
+        dragListener={!isPlaylistEditMode} 
+        dragControls={dragControls} 
+        dragDirectionLock 
+        dragConstraints={{ top: 0, bottom: 0 }} 
+        dragElastic={{ top: 0, bottom: 0.1 }}
+        onDragEnd={handleDragEnd}
+        animate={{ y: isExpanded ? expandedSheetY : collapsedSheetY }}
+        transition={{ type: 'spring', bounce: 0, duration: 0.5 }}
+        className="fixed bottom-0 left-0 right-0 h-[85vh] z-30 flex flex-col glass-panel shadow-[0_-10px_40px_rgba(0,0,0,0.2)] rounded-t-[3.5rem] border-t border-white/30 dark:border-white/10"
+        style={{ touchAction: 'none' }}
+      >
+        {/* Controls Section (Always Visible Handle) */}
+        <div className="w-full flex flex-col items-center pt-2 pb-6 px-5 shrink-0 relative" onPointerDown={(e) => !isPlaylistEditMode && dragControls.start(e)}>
+          {/* Drag Handle */}
+          <div className="w-12 h-1.5 bg-black/20 dark:bg-white/20 rounded-full mb-6 cursor-grab active:cursor-grabbing" />
+          
+          <div className="w-full max-w-[360px] flex flex-col gap-6">
+            <div className="text-center w-full px-2 min-h-[50px] flex flex-col justify-center">
+              <AnimatePresence mode="wait">
+                <motion.div key={activeStation?.id || 'none'} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                  <h2 className="text-xl font-black truncate leading-tight tracking-tight drop-shadow-sm">{activeStation?.name || (hasStations ? '...' : 'Радио')}</h2>
+                  <p className="text-[10px] opacity-50 uppercase tracking-[0.3em] font-black mt-1">{isActuallyPlaying ? (status === 'loading' ? 'Загрузка...' : 'В эфире') : (hasStations ? 'Пауза' : 'Нет станций')}</p>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+            
+            <div className="w-full flex flex-col">
+              <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} onPointerDown={(e) => e.stopPropagation()} className="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full appearance-none transition-all cursor-pointer backdrop-blur-sm" style={{ accentColor: nativeAccentColor }} />
+            </div>
+
+            <div className="w-full flex items-center justify-between px-2">
+              <RippleButton onClick={(e) => { e.stopPropagation(); navigateStation('prev'); }} className={`p-4 transition-all hover:bg-black/5 dark:hover:bg-white/10 rounded-full ${displayedStations.length > 1 ? 'opacity-70 hover:opacity-100' : 'opacity-20 pointer-events-none'}`}><Icons.Prev /></RippleButton>
+              <RippleButton onClick={(e) => { e.stopPropagation(); handleTogglePlay(); }} disabled={!hasStations} className={`w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-xl text-white active:scale-90 border-4 border-white/20 ${!hasStations ? 'opacity-30 grayscale pointer-events-none' : ''}`} style={{ backgroundColor: nativeAccentColor, boxShadow: `0 15px 40px -5px ${nativeAccentColor}77` }}>
+                {isActuallyPlaying ? <Icons.Pause className="w-8 h-8" /> : <Icons.Play className="w-8 h-8 ml-1" />}
+              </RippleButton>
+              <RippleButton onClick={(e) => { e.stopPropagation(); navigateStation('next'); }} className={`p-4 transition-all hover:bg-black/5 dark:hover:bg-white/10 rounded-full ${displayedStations.length > 1 ? 'opacity-70 hover:opacity-100' : 'opacity-20 pointer-events-none'}`}><Icons.Next /></RippleButton>
+            </div>
+          </div>
+          
+          {/* Playlist Hint (Visible only when collapsed) */}
+          <motion.div animate={{ opacity: isExpanded ? 0 : 1 }} className="flex flex-col items-center gap-2 mt-6 text-black/20 dark:text-white/20 w-full active:scale-105 transition-transform cursor-pointer">
+            <span className="text-[9px] uppercase font-black tracking-[0.3em] text-center ml-1 opacity-60">Плейлист</span>
+          </motion.div>
+        </div>
+
+        {/* Playlist Content (Scrollable) */}
+        <div className="flex-1 flex flex-col w-full overflow-hidden border-t border-white/10 dark:border-white/5 bg-white/20 dark:bg-black/20">
+            <div className="w-full flex items-center justify-between px-8 py-4 shrink-0">
+               <div className="flex items-center bg-black/5 dark:bg-white/5 rounded-[1.25rem] p-1.5 backdrop-blur-md border border-white/10 flex-1 mr-4">
+                  <button onClick={() => setPlaylistFilter('all')} className={`flex-1 py-2 text-xs font-black rounded-[1rem] transition-all ${playlistFilter === 'all' ? 'bg-white/80 dark:bg-white/10 shadow-sm' : 'opacity-50 hover:opacity-100'}`} style={{ color: playlistFilter === 'all' ? nativeAccentColor : undefined }}>Все</button>
+                  <button onClick={() => setPlaylistFilter('favorites')} className={`flex-1 py-2 text-xs font-black rounded-[1rem] transition-all ${playlistFilter === 'favorites' ? 'bg-white/80 dark:bg-white/10 shadow-sm' : 'opacity-50 hover:opacity-100'}`} style={{ color: playlistFilter === 'favorites' ? nativeAccentColor : undefined }}>Избранное</button>
+               </div>
+               <RippleButton onClick={() => setIsPlaylistEditMode(!isPlaylistEditMode)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider backdrop-blur-sm border border-white/10 ${isPlaylistEditMode ? 'text-white shadow-lg' : 'bg-black/5 dark:bg-white/10 text-gray-500'}`} style={{ backgroundColor: isPlaylistEditMode ? nativeAccentColor : undefined }}>{isPlaylistEditMode ? 'Готово' : 'РЕДАКТ.'}</RippleButton>
+            </div>
+
+            <div ref={listRef} className="flex-1 overflow-y-auto px-6 flex flex-col overscroll-contain no-scrollbar" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
                 {stationsInPlaylist.length > 0 ? (
                   <ReorderGroup axis="y" values={stationsInPlaylist} onReorder={handleReorder} className="space-y-2 pb-10">
                     {stationsInPlaylist.map(s => (
@@ -888,7 +920,7 @@ export const App: React.FC = () => {
                     ))}
                   </ReorderGroup>
                 ) : <div className="flex-1 flex flex-col items-center justify-center text-center p-10 font-black opacity-30 text-xl">Плейлист пуст</div>}
-                <div className="mt-8 flex flex-col gap-4 mb-safe pb-16">
+                <div className="mt-8 flex flex-col gap-4 mb-safe pb-32">
                   {isPlaylistEditMode && (
                     <div className="flex flex-col gap-4">
                       <RippleButton onClick={() => { setEditingStation(null); setEditorCoverPreview(''); setShowEditor(true); }} className="w-full p-6 rounded-[2rem] border-2 border-dashed border-black/10 dark:border-white/10 opacity-40 font-black flex items-center justify-center gap-3 transition-opacity hover:opacity-100 hover:bg-white/5"><Icons.Add /> Добавить станцию</RippleButton>
@@ -900,11 +932,9 @@ export const App: React.FC = () => {
                     <RippleButton onClick={() => setShowExportModal(true)} className="glass-panel flex flex-col items-center justify-center p-4 rounded-2xl text-[10px] font-black opacity-80 hover:opacity-100 transition-opacity"><Icons.Copy /> Экспорт</RippleButton>
                   </div>
                 </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+            </div>
+        </div>
+      </motion.div>
 
       {/* Editor Modal */}
       <AnimatePresence>
