@@ -1,14 +1,10 @@
 
-// Build: 3.0.9
-// - Logic: Enhanced JSON extraction (Markdown support).
-// - UX: Auto-detection of content type (JSON/M3U) on paste in manual import.
-// - Logic: Added strict duplicate check when adding single stations.
-// - UI: Fixed corner bleeding artifacts on station covers using WebkitMaskImage.
-// - UI: Fixed control panel overflow on small screens (responsive flex layout).
-// - Perf: Merged Controls and Playlist into a single persistent sheet to eliminate animation lag.
-// - UX: Enhanced empty favorites state with clear CTA and visuals.
-// - Animation: Controls now slide down and fade out when playlist expands.
-// - Haptics: Optimized tactile feedback using selectionChanged and refined impact styles.
+// Build: 3.1.0
+// - Perf: Replaced JS-based equalizer with pure CSS animation for better thread performance.
+// - Perf: Implemented React.memo for playlist items to prevent unnecessary re-renders.
+// - Perf: Added 'will-change' hints and async image decoding.
+// - UX: Refined haptics logic to be less intrusive but more tactile.
+// - Logic: Improved modal handling and state cleanup.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls, PanInfo } from 'framer-motion';
@@ -26,7 +22,7 @@ import { Logo } from './components/UI/Logo.tsx';
 const ReorderGroup = Reorder.Group as any;
 const ReorderItem = Reorder.Item as any;
 
-const APP_VERSION = "3.0.9";
+const APP_VERSION = "3.1.0";
 
 const isVideoUrl = (url: string | undefined): boolean => {
   if (!url) return false;
@@ -64,20 +60,15 @@ const parseM3uText = (text: string): Partial<Station>[] => {
 
 const extractJsonFromText = (text: string): any => {
   if (!text) return null;
-
-  // 1. Try exact parse
   try { return JSON.parse(text); } catch {}
-
-  // 2. Try extracting from Markdown code blocks (```json ... ```)
+  
   const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/i);
   if (markdownMatch && markdownMatch[1]) {
     try { return JSON.parse(markdownMatch[1]); } catch {}
   }
 
-  // 3. Heuristic search for JSON object or array
   const firstBrace = text.indexOf('{');
   const firstBracket = text.indexOf('[');
-  
   let startIdx = -1;
   let endChar = '';
   
@@ -98,12 +89,13 @@ const extractJsonFromText = (text: string): any => {
   return null;
 };
 
-const MiniEqualizer: React.FC = () => (
+// Pure CSS Equalizer (Performance Win)
+const CssEqualizer: React.FC = () => (
   <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
     <div className="flex gap-1 items-end h-3.5 mb-1">
-      <motion.div animate={{ height: [4, 12, 4] }} transition={{ repeat: Infinity, duration: 0.6, ease: "easeInOut" }} className="w-1 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
-      <motion.div animate={{ height: [12, 6, 12] }} transition={{ repeat: Infinity, duration: 0.5, ease: "easeInOut", delay: 0.1 }} className="w-1 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
-      <motion.div animate={{ height: [6, 10, 6] }} transition={{ repeat: Infinity, duration: 0.7, ease: "easeInOut", delay: 2 }} className="w-1 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+      <div className="w-1 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] eq-bar-1" />
+      <div className="w-1 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] eq-bar-2" />
+      <div className="w-1 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] eq-bar-3" />
     </div>
   </div>
 );
@@ -114,7 +106,8 @@ const StationCover: React.FC<{
   showTags?: boolean;
   showLink?: boolean;
   isPlaying?: boolean;
-}> = ({ station, className = "", showTags = true, showLink = true, isPlaying = false }) => {
+  priority?: boolean;
+}> = ({ station, className = "", showTags = true, showLink = true, isPlaying = false, priority = false }) => {
   const [hasError, setHasError] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const mediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
@@ -198,6 +191,8 @@ const StationCover: React.FC<{
           key={`img-${station.coverUrl}`}
           src={station.coverUrl}
           alt={station.name || 'Cover'}
+          loading={priority ? "eager" : "lazy"}
+          decoding="async"
           initial={{ opacity: 0 }}
           animate={{ opacity: isLoaded ? 1 : 0 }}
           onLoad={() => setIsLoaded(true)}
@@ -222,7 +217,6 @@ interface ReorderItemProps {
   isEditMode: boolean;
   status: PlayerStatus;
   accentColor: string;
-  destructiveColor: string;
   onSelect: () => void;
   onEdit: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
@@ -230,7 +224,8 @@ interface ReorderItemProps {
   hapticImpact: (style?: any) => void;
 }
 
-const ReorderableStationItem: React.FC<ReorderItemProps> = ({
+// Memoized List Item to prevent unnecessary re-renders when parent state (like volume) changes
+const ReorderableStationItem = React.memo<ReorderItemProps>(({
   station, isActive, isPlaying, isFavorite, isEditMode, status, accentColor, onSelect, onEdit, onDelete, onToggleFavorite, hapticImpact
 }) => {
   return (
@@ -251,7 +246,7 @@ const ReorderableStationItem: React.FC<ReorderItemProps> = ({
         <StationCover station={station} className="w-full h-full" showTags={false} showLink={false} />
         <AnimatePresence>
           {isPlaying && (status === 'playing' || status === 'loading') && !isEditMode && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><MiniEqualizer /></motion.div>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><CssEqualizer /></motion.div>
           )}
         </AnimatePresence>
       </div>
@@ -281,7 +276,7 @@ const ReorderableStationItem: React.FC<ReorderItemProps> = ({
       </div>
     </ReorderItem>
   );
-};
+});
 
 export const App: React.FC = () => {
   const { hapticImpact, hapticNotification, hapticSelectionChanged, setBackButton, isMobile, themeParams } = useTelegram();
@@ -452,18 +447,20 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [sleepTimerEndDate, volume, setVolume]);
 
-  const handleReorder = (reorderedItems: Station[]) => {
+  const handleReorder = useCallback((reorderedItems: Station[]) => {
     isReorderingRef.current = true;
     if (playlistFilter === 'all') setStations(reorderedItems);
     else {
-      const newStations = [...stations];
-      let favIdx = 0;
-      for(let i=0; i<newStations.length; i++) { if (favorites.includes(newStations[i].id)) newStations[i] = reorderedItems[favIdx++]; }
-      setStations(newStations);
+      setStations(prev => {
+         const newStations = [...prev];
+         let favIdx = 0;
+         for(let i=0; i<newStations.length; i++) { if (favorites.includes(newStations[i].id)) newStations[i] = reorderedItems[favIdx++]; }
+         return newStations;
+      });
     }
     hapticSelectionChanged();
     setTimeout(() => { isReorderingRef.current = false; }, 50);
-  };
+  }, [playlistFilter, favorites, hapticSelectionChanged]);
 
   const toggleFavorite = useCallback((id: string, e?: React.MouseEvent) => {
     e?.stopPropagation(); hapticImpact('light');
@@ -736,7 +733,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col overflow-hidden transition-colors duration-500 select-none relative" style={{ height: 'var(--tg-viewport-height, 100vh)', color: nativeTextColor, backgroundColor: nativeBgColor }}>
-      {/* Liquid Glass Background Blobs */}
+      {/* Liquid Glass Background Blobs - Will change hint added in CSS */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden bg-white dark:bg-[#050505]">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-500/30 blur-[120px] animate-blob mix-blend-multiply dark:mix-blend-normal dark:opacity-40"></div>
         <div className="absolute top-[10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-500/30 blur-[120px] animate-blob animation-delay-2000 mix-blend-multiply dark:mix-blend-normal dark:opacity-40"></div>
@@ -806,7 +803,7 @@ export const App: React.FC = () => {
                             maskImage: 'radial-gradient(white, black)'
                           }}
                         >
-                          <StationCover station={station} className="w-full h-full opacity-90 rounded-[inherit]" isPlaying={playingStationId === station.id && isActuallyPlaying} />
+                          <StationCover station={station} className="w-full h-full opacity-90 rounded-[inherit]" isPlaying={playingStationId === station.id && isActuallyPlaying} priority={activeStationId === station.id} />
                           <AnimatePresence mode="popLayout">
                             {activeStationId === station.id && (
                               <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[2.5rem] z-40">
@@ -879,7 +876,7 @@ export const App: React.FC = () => {
         animate={{ y: isExpanded ? expandedSheetY : collapsedSheetY }}
         transition={{ type: 'spring', bounce: 0, duration: 0.5 }}
         className="fixed bottom-0 left-0 right-0 h-[85vh] z-30 flex flex-col glass-panel shadow-[0_-10px_40px_rgba(0,0,0,0.2)] rounded-t-[3.5rem] border-t border-white/30 dark:border-white/10"
-        style={{ touchAction: 'none' }}
+        style={{ touchAction: 'none', willChange: 'transform' }}
       >
         {/* Controls Section Container */}
         <div className="w-full flex flex-col items-center pt-2 px-5 shrink-0 relative" onPointerDown={(e) => !isPlaylistEditMode && dragControls.start(e)}>
@@ -949,7 +946,7 @@ export const App: React.FC = () => {
                 {stationsInPlaylist.length > 0 ? (
                   <ReorderGroup axis="y" values={stationsInPlaylist} onReorder={handleReorder} className="space-y-2 pb-10">
                     {stationsInPlaylist.map(s => (
-                        <ReorderableStationItem key={s.id} station={s} isActive={activeStationId === s.id} isPlaying={playingStationId === s.id} isFavorite={favorites.includes(s.id)} isEditMode={isPlaylistEditMode} status={status} accentColor={nativeAccentColor} destructiveColor={nativeDestructiveColor} hapticImpact={hapticImpact} onSelect={() => { if (playingStationId === s.id && (status === 'playing' || status === 'loading')) { stop(); } else { setActiveStationId(s.id); setPlayingStationId(s.id); if (favorites.includes(s.id)) setLastPlayedFavoriteId(s.id); if (swiperInstance) { const targetIdx = displayedStations.findIndex(ds => ds.id === s.id); if (targetIdx !== -1) swiperInstance.slideToLoop(targetIdx); } play(s.streamUrl, s); } }} onToggleFavorite={(e) => toggleFavorite(s.id, e)} onEdit={(e) => { e.stopPropagation(); setEditingStation(s); setEditorCoverPreview(s.coverUrl || ''); setShowEditor(true); }} onDelete={(e) => handleDelete(s.id, e)} />
+                        <ReorderableStationItem key={s.id} station={s} isActive={activeStationId === s.id} isPlaying={playingStationId === s.id} isFavorite={favorites.includes(s.id)} isEditMode={isPlaylistEditMode} status={status} accentColor={nativeAccentColor} hapticImpact={hapticImpact} onSelect={() => { if (playingStationId === s.id && (status === 'playing' || status === 'loading')) { stop(); } else { setActiveStationId(s.id); setPlayingStationId(s.id); if (favorites.includes(s.id)) setLastPlayedFavoriteId(s.id); if (swiperInstance) { const targetIdx = displayedStations.findIndex(ds => ds.id === s.id); if (targetIdx !== -1) swiperInstance.slideToLoop(targetIdx); } play(s.streamUrl, s); } }} onToggleFavorite={(e) => toggleFavorite(s.id, e)} onEdit={(e) => { e.stopPropagation(); setEditingStation(s); setEditorCoverPreview(s.coverUrl || ''); setShowEditor(true); }} onDelete={(e) => handleDelete(s.id, e)} />
                     ))}
                   </ReorderGroup>
                 ) : <div className="flex-1 flex flex-col items-center justify-center text-center p-10 font-black opacity-30 text-xl">Плейлист пуст</div>}

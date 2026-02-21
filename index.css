@@ -74,7 +74,7 @@ input[type="range"]::-webkit-slider-thumb {
   animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Animation for Liquid Glass Blobs */
+/* Animation for Liquid Glass Blobs - GPU Optimized */
 @keyframes blob {
   0% { transform: translate(0px, 0px) scale(1); }
   33% { transform: translate(30px, -50px) scale(1.1); }
@@ -83,7 +83,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .animate-blob {
-  animation: blob 7s infinite;
+  animation: blob 10s infinite; /* Slower for better performance feel */
+  will-change: transform;
 }
 
 .animation-delay-2000 {
@@ -93,6 +94,15 @@ input[type="range"]::-webkit-slider-thumb {
 .animation-delay-4000 {
   animation-delay: 4s;
 }
+
+/* CSS Equalizer Animations (Performance optimized over JS) */
+@keyframes eq-bar-1 { 0%, 100% { height: 4px; } 50% { height: 12px; } }
+@keyframes eq-bar-2 { 0%, 100% { height: 12px; } 50% { height: 6px; } }
+@keyframes eq-bar-3 { 0%, 100% { height: 6px; } 50% { height: 10px; } }
+
+.eq-bar-1 { animation: eq-bar-1 0.6s ease-in-out infinite; }
+.eq-bar-2 { animation: eq-bar-2 0.5s ease-in-out infinite 0.1s; }
+.eq-bar-3 { animation: eq-bar-3 0.7s ease-in-out infinite 0.2s; }
 
 /* Glass Utility Classes */
 .glass-panel {
